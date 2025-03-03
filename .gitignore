@@ -22,3 +22,6 @@ target/
 logs/
 config/*/*.conf
 !config/*/c1.conf
+
+.DS_Store
+.idea/
