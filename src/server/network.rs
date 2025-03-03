@@ -101,7 +101,7 @@ impl Network {
         connection_sender: Sender<NewConnection>,
     ) -> tokio::task::JoinHandle<()> {
         let port = 8000 + self.id as u16;
-        let listening_address = SocketAddr::from(([0, 0, 0, 0], port));
+        let listening_address = SocketAddr::from(([0, 0, 0, 0, 0, 0, 0, 1], port));
         let client_sender = self.client_message_sender.clone();
         let cluster_sender = self.cluster_message_sender.clone();
         let max_client_id_handle = self.max_client_id.clone();
