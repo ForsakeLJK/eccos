@@ -140,6 +140,7 @@ impl OmniPaxosServer {
     fn send_outgoing(&mut self, mut msg_buffer: Vec<(NodeId, ClusterMessage)>) {
         match self.config.out_scheduling_strategy {
             SchedulingStrategy::FCFS => scheduler::fcfs(&mut msg_buffer),
+            SchedulingStrategy::LIFO => scheduler::lifo(&mut msg_buffer)
         }
 
         for (to, msg) in msg_buffer {
@@ -259,6 +260,7 @@ impl OmniPaxosServer {
 
         match self.config.in_scheduling_strategy {
             SchedulingStrategy::FCFS => scheduler::fcfs(messages),
+            SchedulingStrategy::LIFO => scheduler::lifo(messages)
         }
 
         for (_from, message) in messages.drain(..) {
