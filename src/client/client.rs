@@ -118,10 +118,11 @@ impl Client {
         }
 
         info!(
-            "{}: Client finished: collected {} responses with avg latency of {}ms",
+            "{}: Client finished: collected {} responses with avg latency of {}ms. sent {} requests",
             self.id,
             self.client_data.response_count(),
-            self.client_data.avg_latency_ms()
+            self.client_data.avg_latency_ms(),
+            self.next_request_id
         );
         self.network
             .send(self.active_server, ClientMessage::EndExperiment)
