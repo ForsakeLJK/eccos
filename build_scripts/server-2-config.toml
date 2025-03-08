@@ -3,7 +3,7 @@ server_id = 2
 num_clients = 0 # Hardcoded number of client connections to wait for
 summary_filepath = "../benchmarks/logs/local-run/server-2.json"
 output_filepath = "../benchmarks/logs/local-run/server-2.csv"
-in_scheduling_strategy = "FCFS"
+in_scheduling_strategy = "HB_LF_FF"
 out_scheduling_strategy = "FCFS"
 
 # Cluster-wide settings
