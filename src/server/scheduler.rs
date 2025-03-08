@@ -1,10 +1,16 @@
 use omnipaxos::util::NodeId;
 use omnipaxos_kv::common::messages::ClusterMessage;
+use omnipaxos::messages::Message;
+use omnipaxos::messages::sequence_paxos::PaxosMsg;
+use omnipaxos::messages::ballot_leader_election::HeartbeatMsg;
 use serde::{Deserialize, Serialize};
-
+use omnipaxos_kv::common::utils::Timestamp;
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum SchedulingStrategy {
     FCFS,
+    LIFO,
+    MP,
+    HB_LF_FF,
     // TODO: Add more strategies here
 }
 
@@ -90,3 +96,5 @@ pub fn hybrid_lifo_fifo(msg_buffer: &mut Vec<(NodeId, ClusterMessage)>) {
     // Now update the original buffer
     *msg_buffer = merged_msgs;
 }
+
+
