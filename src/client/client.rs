@@ -167,6 +167,7 @@ impl Client {
         self.client_data.save_summary(self.config.clone())?;
         self.client_data
             .to_csv(self.config.output_filepath.clone())?;
+        self.client_data.save_throughput(self.next_request_id)?;
         Ok(())
     }
 }
