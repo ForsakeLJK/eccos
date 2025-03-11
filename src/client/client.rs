@@ -87,9 +87,9 @@ impl Client {
                 loop {
                     let wakeup_duration = request_config.compute_inter_arrival_time(&mut rng);
                     sleep(wakeup_duration).await;
-                    tx_wakeup.send(true).await.unwrap();
+                    tx_wakeup.send(true).await.unwrap_or(());
                     if experiment_start_time.elapsed() > request_config.get_experiment_duration() {
-                        tx_end.send(true).await.unwrap();
+                        tx_end.send(true).await.unwrap_or(());
                     }
                 }
             }
@@ -205,6 +205,8 @@ impl RequestConfig {
     fn generate_kv_request(&self, rng: &mut SmallRng) -> (Key, Value) {
         let val = rng.gen_range(0..=10);
         let key = match &self.skew {
+            // 0, partition_size * partition_cnt
+
             SkewType::Uniform => rng.gen_range(self.key_range[0]..=self.key_range[1]),
             SkewType::Weighted(weights) => {
                 let dist = WeightedIndex::new(weights).unwrap();

@@ -7,10 +7,10 @@ output_filepath = "../benchmarks/logs/local-run/client-1.csv"
 
 # Defining TOML vector of (duration_sec, requests_per_sec, read_ratio) which determines the behavior of the client requests
 [request_config]
-duration_sec = 30
-requests_per_sec = 100
-read_ratio = 0.0
-key_range = [0, 99999]
+duration_sec = 8
+requests_per_sec = 500
+read_ratio = 0.5
+key_range = [0, 999]
 
 [request_config.skew]
 # type = "Weighted"

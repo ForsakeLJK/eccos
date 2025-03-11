@@ -14,6 +14,7 @@ pub struct OmniPaxosServerConfig {
     pub output_filepath: String,
     pub in_scheduling_strategy: SchedulingStrategy,
     pub out_scheduling_strategy: SchedulingStrategy,
+    pub worker_num : Option<usize>,
     // Cluster-wide settings
     pub local_deployment: Option<bool>,
     pub cluster_name: String,

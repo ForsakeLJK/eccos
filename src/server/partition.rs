@@ -1,3 +1,5 @@
+use std::thread::sleep;
+use std::time::Duration;
 use crate::data_collection::DataCollection;
 use log::{debug, info};
 use omnipaxos::{
@@ -103,6 +105,8 @@ impl Partition {
         if self.current_decided_idx >= new_decided_idx {
             return vec![];
         }
+
+        sleep(Duration::from_millis(4));
 
         let decided_entries = self
             .omnipaxos
