@@ -105,7 +105,7 @@ impl Partition {
         if self.current_decided_idx >= new_decided_idx {
             return vec![];
         }
-
+        // NB: A sleep exists here to simulate IO latency
         sleep(Duration::from_millis(4));
 
         let decided_entries = self
