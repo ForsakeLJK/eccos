@@ -174,7 +174,7 @@ impl Client {
 #[serde(tag = "type", content = "weights")]
 enum SkewType {
     Uniform,
-    Weighted([i32; 26]),
+    Weighted([i32; 3]),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -206,7 +206,7 @@ impl RequestConfig {
             SkewType::Uniform => rng.gen_range(self.key_range[0]..=self.key_range[1]),
             SkewType::Weighted(weights) => {
                 let dist = WeightedIndex::new(weights).unwrap();
-                dist.sample(rng)
+                dist.sample(rng)*500
             }
         };
         (key, val)
