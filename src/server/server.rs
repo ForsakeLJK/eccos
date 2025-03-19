@@ -335,6 +335,9 @@ impl OmniPaxosServer {
             SchedulingStrategy::FAIR => {
                 scheduler::fair(messages, &mut waiting_pool, self.config.partition_size)
             }
+            SchedulingStrategy::MP => scheduler::mp(messages),
+            SchedulingStrategy::HB_LF_FF => scheduler::hybrid_lifo_fifo(messages),
+            SchedulingStrategy::TS => scheduler::ts(messages),
         }
 
         self.waiting_pool = waiting_pool;

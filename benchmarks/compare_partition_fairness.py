@@ -101,8 +101,8 @@ def main():
     # parser.add_argument('--no-plot', action='store_true')
     # args = parser.parse_args()
     no_plot = False
-    file1_path = "logs/local-run/server-1-fcfs.csv"
-    file2_path = "logs/local-run/server-2-fair.csv"
+    file1_path = "logs/local-run/server-1.csv"
+    file2_path = "logs/local-run/server-1-fcfs-11111.csv"
     files = [file1_path, file2_path]
     all_file_stats = []
     for file_path in files:

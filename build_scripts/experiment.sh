@@ -4,7 +4,7 @@
 #./run-local-client.sh
 
 # Set the number of iterations (X times)
-X=10  # Change this value as needed
+X=13  # Change this value as needed
 
 # Loop X times
 i=0
