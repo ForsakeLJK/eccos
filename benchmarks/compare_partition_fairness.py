@@ -1,8 +1,9 @@
 import csv
-import numpy as np
-import matplotlib.pyplot as plt
 from pathlib import Path
-import argparse
+
+import matplotlib.pyplot as plt
+import numpy as np
+
 
 def analyze_csv_distribution(file_path):
     try:
@@ -65,8 +66,8 @@ def plot_distributions(file_stats):
                 value = grouped_data[j][i]
                 position = j + i * bar_width
                 bar = plt.bar(position, value, bar_width, color=colors[i % len(colors)], label=file_stats[i]["file_name"] if j == 0 else "")
-                plt.text(position, value + max(grouped_data[j]) * 0.02, 
-                         f'{value:.0f}', 
+                plt.text(position, value + max(grouped_data[j]) * 0.02,
+                         f'{value:.0f}',
                          ha='center', va='bottom', fontsize=9)
     group_positions = [j + (n_files-1) * bar_width / 2 for j in range(len(grouped_data))]
     plt.xticks(group_positions, [f"Parition {j+1}" for j in range(len(grouped_data))])
@@ -74,7 +75,7 @@ def plot_distributions(file_stats):
     plt.ylabel('Messages')
     plt.grid(True, linestyle='--', alpha=0.3, axis='y')
     plt.legend()
-    
+
     plt.subplot(1, 2, 2)
     x_pos = np.arange(len(file_stats))
     width = 0.6
@@ -95,12 +96,16 @@ def plot_distributions(file_stats):
     plt.show()
 
 def main():
-    parser = argparse.ArgumentParser(description='analyze_distributions')
-    parser.add_argument('files', nargs='+',)
-    parser.add_argument('--no-plot', action='store_true')
-    args = parser.parse_args()
+    # parser = argparse.ArgumentParser(description='analyze_distributions')
+    # parser.add_argument('files', nargs='+',)
+    # parser.add_argument('--no-plot', action='store_true')
+    # args = parser.parse_args()
+    no_plot = False
+    file1_path = "logs/local-run/server-1-fcfs.csv"
+    file2_path = "logs/local-run/server-2-fair.csv"
+    files = [file1_path, file2_path]
     all_file_stats = []
-    for file_path in args.files:
+    for file_path in files:
         stats = analyze_csv_distribution(file_path)
         if "error" in stats:
             print(f"error: {stats['error']}")
@@ -113,11 +118,11 @@ def main():
         # print(f"range: {stats['min']} - {stats['max']}")
     if len(all_file_stats) >= 2:
         compare_multiple_csv_distributions(all_file_stats)
-        if not args.no_plot:
+        if not no_plot:
             try:
                 plot_distributions(all_file_stats)
             except Exception as e:
                 print(f"{str(e)}")
-    
+
 if __name__ == "__main__":
     main()

@@ -3,14 +3,15 @@ server_id = 3
 num_clients = 0 # Hardcoded number of client connections to wait for
 summary_filepath = "../benchmarks/logs/local-run/server-3.json"
 output_filepath = "../benchmarks/logs/local-run/server-3.csv"
-in_scheduling_strategy = "FCFS"
+in_scheduling_strategy = "WMWRR"
 out_scheduling_strategy = "FCFS"
+thread_num = 1
 
 # Cluster-wide settings
 local_deployment = true # use localhost
 cluster_name = "local-cluster"
 nodes = [1, 2, 3]
 initial_leader = 1
-initial_flexible_quorum = { read_quorum_size = 2, write_quorum_size = 2}
-num_partitions = 10_000
-partition_size = 10
+initial_flexible_quorum = { read_quorum_size = 2, write_quorum_size = 2 }
+num_partitions = 3
+partition_size = 1000
