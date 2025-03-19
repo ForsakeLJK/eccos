@@ -14,9 +14,9 @@ use dashmap::DashMap;
 use log::*;
 use omnipaxos::{util::NodeId, OmniPaxosConfig};
 use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
+use std::collections::HashMap;
 use std::sync::Arc;
 use std::{fs::File, io::Write, time::Duration};
-use std::collections::HashMap;
 use threadpool::ThreadPool;
 
 const NETWORK_BATCH_SIZE: usize = 1000;
@@ -33,6 +33,7 @@ pub struct OmniPaxosServer {
     result_receiver: Receiver<(Vec<Command>, Vec<(NodeId, ClusterMessage)>)>,
     sender_channels: Vec<Sender<ClusterMessage>>,
     num_threads: usize,
+    waiting_pool: HashMap<usize, Vec<ClusterMessage>>,
 }
 
 impl OmniPaxosServer {
@@ -74,7 +75,7 @@ impl OmniPaxosServer {
 
         let peers = config.get_peers(config.server_id);
 
-        let num_threads = 4;
+        let num_threads = config.thread_num;
         let pool = ThreadPool::new(num_threads);
 
         let mut sender_channels = Vec::with_capacity(num_threads);
@@ -115,6 +116,11 @@ impl OmniPaxosServer {
             });
         }
 
+        let mut waiting_pool = HashMap::new();
+        for i in 0..=(pi - 1) {
+            waiting_pool.insert(i, Vec::new());
+        }
+
         let server = OmniPaxosServer {
             id,
             database,
@@ -125,6 +131,7 @@ impl OmniPaxosServer {
             result_receiver,
             sender_channels,
             num_threads,
+            waiting_pool,
         };
         server
     }
@@ -315,13 +322,20 @@ impl OmniPaxosServer {
         trace!("Incoming Queue: {:?}", messages);
         let mut early_msg = HashMap::new();
 
+        let mut waiting_pool = self.waiting_pool.clone();
         match self.config.in_scheduling_strategy {
             SchedulingStrategy::FCFS => scheduler::fcfs(messages),
             SchedulingStrategy::LIFO => scheduler::lifo(messages),
             SchedulingStrategy::RR => scheduler::rr(messages, self.config.partition_size),
-            SchedulingStrategy::EARLY =>
-                early_msg = scheduler::early(messages, self.config.partition_size, self.num_threads),
+            SchedulingStrategy::EARLY => {
+                early_msg = scheduler::early(messages, self.config.partition_size, self.num_threads)
+            }
+            SchedulingStrategy::FAIR => {
+                scheduler::fair(messages, &mut waiting_pool, self.config.partition_size)
+            }
         }
+
+        self.waiting_pool = waiting_pool;
 
         // Create a vector of indices first
         let indices: Vec<usize> = (0..messages.len()).collect();
@@ -331,24 +345,20 @@ impl OmniPaxosServer {
         // iterate with indices
         for (idx, (_from, message)) in indices.into_iter().zip(drained_messages.into_iter()) {
             match message {
-                ClusterMessage::OmniPaxosMessage(_) => {
-                    match self.config.in_scheduling_strategy {
-                        SchedulingStrategy::EARLY => {
-                            self
-                                .sender_channels[*early_msg.get(&idx).unwrap()]
-                                .send(message)
-                                .expect("thread pool send panic");
-                            tsk_cnt +=1;
-                        },
-                        _ => {
-                            self
-                                .sender_channels[tsk_cnt % self.num_threads]
-                                .send(message)
-                                .expect("thread pool send panic");
-                            tsk_cnt +=1;
-                        }
+                ClusterMessage::OmniPaxosMessage(_) => match self.config.in_scheduling_strategy {
+                    SchedulingStrategy::EARLY => {
+                        self.sender_channels[*early_msg.get(&idx).unwrap()]
+                            .send(message)
+                            .expect("thread pool send panic");
+                        tsk_cnt += 1;
                     }
-                }
+                    _ => {
+                        self.sender_channels[tsk_cnt % self.num_threads]
+                            .send(message)
+                            .expect("thread pool send panic");
+                        tsk_cnt += 1;
+                    }
+                },
                 ClusterMessage::LeaderStartSignal(start_time) => {
                     self.send_client_start_signals(start_time)
                 }
@@ -357,7 +367,7 @@ impl OmniPaxosServer {
         }
 
         while tsk_cnt > 0 {
-            match  self.result_receiver.recv() {
+            match self.result_receiver.recv() {
                 Ok((decided_commands, mut outgoing_msgs)) => {
                     self.handle_decided_entries(decided_commands);
                     outgoing_msg_buffer.append(&mut outgoing_msgs);

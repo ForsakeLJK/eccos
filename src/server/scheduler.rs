@@ -9,6 +9,7 @@ pub enum SchedulingStrategy {
     LIFO,
     RR,
     EARLY,
+    FAIR,
 }
 
 // NOTE: Message buffer is already fcfs
@@ -75,7 +76,11 @@ pub fn rr(msg_buffer: &mut Vec<(NodeId, ClusterMessage)>, partition_size: u64) {
     *msg_buffer = result;
 }
 
-pub fn early(msg_buffer: &Vec<(NodeId, ClusterMessage)>, partition_size: u64, num_threads: usize) -> HashMap<usize, usize> {
+pub fn early(
+    msg_buffer: &Vec<(NodeId, ClusterMessage)>,
+    partition_size: u64,
+    num_threads: usize,
+) -> HashMap<usize, usize> {
     let mut result = HashMap::new();
 
     // Keep track of which thread handles which partition_id
@@ -87,7 +92,8 @@ pub fn early(msg_buffer: &Vec<(NodeId, ClusterMessage)>, partition_size: u64, nu
             let partition_id = *key / partition_size as usize;
 
             // If this partition hasn't been assigned to a thread yet, assign it
-            let thread_id = *partition_to_thread.entry(partition_id)
+            let thread_id = *partition_to_thread
+                .entry(partition_id)
                 .or_insert_with(|| partition_id % num_threads);
 
             // Add this message's idx and thread assignment to the result
@@ -97,4 +103,53 @@ pub fn early(msg_buffer: &Vec<(NodeId, ClusterMessage)>, partition_size: u64, nu
     }
 
     result
+}
+
+pub fn fair(
+    msg_buffer: &mut Vec<(NodeId, ClusterMessage)>,
+    waiting_map: &mut HashMap<usize, Vec<ClusterMessage>>,
+    partition_size: u64,
+) {
+    let mut leader_start: Option<(NodeId, ClusterMessage)> = None;
+    let mut leader_stop: Option<(NodeId, ClusterMessage)> = None;
+
+    // Step 1: Drain msg_buffer and categorize messages
+    let mut temp_buffer: Vec<(NodeId, ClusterMessage)> = Vec::new();
+
+    while let Some((node_id, msg)) = msg_buffer.pop() {
+        match msg {
+            ClusterMessage::LeaderStartSignal(_) => leader_start = Some((node_id, msg)),
+            ClusterMessage::LeaderStopSignal => leader_stop = Some((node_id, msg)),
+            ClusterMessage::OmniPaxosMessage((key, _)) => {
+                let partition_id = key / partition_size as usize;
+                waiting_map.entry(partition_id).or_default().push(msg);
+            }
+        }
+    }
+
+    // Step 2: Poll waiting_map in round-robin order
+    if !waiting_map.is_empty() {
+        let least_len = waiting_map.values().map(Vec::len).min().unwrap_or(0);
+        let mut keys: Vec<_> = waiting_map.keys().cloned().collect();
+        keys.sort(); // Ensure a deterministic order
+
+        for _ in 0..least_len {
+            for &key in &keys {
+                if let Some(vec) = waiting_map.get_mut(&key) {
+                    if let Some(msg) = vec.drain(..1).next() {
+                        temp_buffer.push((0, msg)); // NodeId 0 as placeholder
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 3: Reconstruct msg_buffer with correct order
+    if let Some(start_msg) = leader_start.take() {
+        msg_buffer.push(start_msg);
+    }
+    msg_buffer.append(&mut temp_buffer);
+    if let Some(stop_msg) = leader_stop.take() {
+        msg_buffer.push(stop_msg);
+    }
 }
