@@ -25,3 +25,5 @@ config/*/*.conf
 
 .DS_Store
 .idea/
+
+*.png

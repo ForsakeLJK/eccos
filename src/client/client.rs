@@ -87,9 +87,9 @@ impl Client {
                 loop {
                     let wakeup_duration = request_config.compute_inter_arrival_time(&mut rng);
                     sleep(wakeup_duration).await;
-                    tx_wakeup.send(true).await.unwrap();
+                    tx_wakeup.send(true).await.unwrap_or(());
                     if experiment_start_time.elapsed() > request_config.get_experiment_duration() {
-                        tx_end.send(true).await.unwrap();
+                        tx_end.send(true).await.unwrap_or(());
                     }
                 }
             }
@@ -118,10 +118,11 @@ impl Client {
         }
 
         info!(
-            "{}: Client finished: collected {} responses with avg latency of {}ms",
+            "{}: Client finished: collected {} responses with avg latency of {}ms. sent {} requests",
             self.id,
             self.client_data.response_count(),
-            self.client_data.avg_latency_ms()
+            self.client_data.avg_latency_ms(),
+            self.next_request_id
         );
         self.network
             .send(self.active_server, ClientMessage::EndExperiment)
@@ -166,6 +167,7 @@ impl Client {
         self.client_data.save_summary(self.config.clone())?;
         self.client_data
             .to_csv(self.config.output_filepath.clone())?;
+        self.client_data.save_throughput(self.next_request_id)?;
         Ok(())
     }
 }
@@ -174,7 +176,7 @@ impl Client {
 #[serde(tag = "type", content = "weights")]
 enum SkewType {
     Uniform,
-    Weighted([i32; 26]),
+    Weighted([i32; 3]),
 }
 
 #[derive(Debug, Serialize, Deserialize, Clone, Copy)]
@@ -203,12 +205,15 @@ impl RequestConfig {
     fn generate_kv_request(&self, rng: &mut SmallRng) -> (Key, Value) {
         let val = rng.gen_range(0..=10);
         let key = match &self.skew {
+            // 0, partition_size * partition_cnt
+
             SkewType::Uniform => rng.gen_range(self.key_range[0]..=self.key_range[1]),
             SkewType::Weighted(weights) => {
                 let dist = WeightedIndex::new(weights).unwrap();
-                dist.sample(rng)
+                dist.sample(rng) * 1000 + 3
             }
         };
+        // println!("{}", key);
         (key, val)
     }
 }

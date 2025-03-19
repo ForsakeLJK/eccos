@@ -1,5 +1,5 @@
-use std::{fs::File, io::Write};
-
+use std::{fs::File, io, io::Write};
+use std::fs::OpenOptions;
 use chrono::Utc;
 use csv::Writer;
 use omnipaxos_kv::common::{kv::CommandId, utils::Timestamp};
@@ -85,6 +85,25 @@ impl ClientData {
             writer.serialize(data)?;
         }
         writer.flush()?;
+        Ok(())
+    }
+
+    pub fn save_throughput(&self, total_req_cnt: usize) -> Result<(), io::Error> {
+        let path = "../benchmarks/logs/local-run/client-throughput.csv";
+
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(path)?;
+
+        writeln!(
+            file,
+            "{},{},{}",
+            self.response_count(),
+            self.avg_latency_ms(),
+            total_req_cnt
+        )?;
+
         Ok(())
     }
 }

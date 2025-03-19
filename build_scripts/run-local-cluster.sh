@@ -19,5 +19,5 @@ for ((i = 1; i <= cluster_size; i++)); do
     config_path="./server-${i}-config.toml"
     RUST_LOG=$rust_log CONFIG_FILE="$config_path" cargo run --release --manifest-path="../Cargo.toml" --bin server &
 done
-wait
+#wait
 

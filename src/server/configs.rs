@@ -22,6 +22,7 @@ pub struct OmniPaxosServerConfig {
     pub initial_flexible_quorum: Option<FlexibleQuorum>,
     pub num_partitions: u64,
     pub partition_size: u64,
+    pub thread_num: usize,
 }
 
 impl Into<OmniPaxosConfig> for OmniPaxosServerConfig {
