@@ -10,7 +10,7 @@ mod network;
 mod partition;
 mod scheduler;
 mod server;
-
+mod profiling;
 #[tokio::main]
 pub async fn main() {
     env_logger::init();
