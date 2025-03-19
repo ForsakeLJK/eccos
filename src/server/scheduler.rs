@@ -8,6 +8,7 @@ pub enum SchedulingStrategy {
     FCFS,
     LIFO,
     RR,
+    EARLY,
 }
 
 // NOTE: Message buffer is already fcfs
@@ -72,4 +73,28 @@ pub fn rr(msg_buffer: &mut Vec<(NodeId, ClusterMessage)>, partition_size: u64) {
     result.extend(stop_signals);
 
     *msg_buffer = result;
+}
+
+pub fn early(msg_buffer: &Vec<(NodeId, ClusterMessage)>, partition_size: u64, num_threads: usize) -> HashMap<usize, usize> {
+    let mut result = HashMap::new();
+
+    // Keep track of which thread handles which partition_id
+    let mut partition_to_thread = HashMap::new();
+
+    for (idx, (_node_id, message)) in msg_buffer.iter().enumerate() {
+        if let ClusterMessage::OmniPaxosMessage((key, _)) = message {
+            // Calculate partition_id
+            let partition_id = *key / partition_size as usize;
+
+            // If this partition hasn't been assigned to a thread yet, assign it
+            let thread_id = *partition_to_thread.entry(partition_id)
+                .or_insert_with(|| partition_id % num_threads);
+
+            // Add this message's idx and thread assignment to the result
+            result.insert(idx, thread_id);
+        }
+        // Skip LeaderStopSignal and LeaderStartSignal as specified
+    }
+
+    result
 }
