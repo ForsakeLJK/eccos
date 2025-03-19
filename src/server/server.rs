@@ -332,8 +332,11 @@ impl OmniPaxosServer {
             SchedulingStrategy::EARLY => {
                 early_msg = scheduler::early(messages, self.config.partition_size, self.num_threads)
             }
-            SchedulingStrategy::FAIR => {
-                scheduler::fair(messages, &mut waiting_pool, self.config.partition_size)
+            SchedulingStrategy::WMRR => {
+                scheduler::wmrr(messages, &mut waiting_pool, self.config.partition_size)
+            }
+            SchedulingStrategy::WMWRR => {
+                scheduler::wmwrr(messages, &mut waiting_pool, self.config.partition_size, 0)
             }
             SchedulingStrategy::MP => scheduler::mp(messages),
             SchedulingStrategy::HB_LF_FF => scheduler::hybrid_lifo_fifo(messages),
