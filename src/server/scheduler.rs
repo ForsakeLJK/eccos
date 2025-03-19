@@ -14,7 +14,8 @@ pub enum SchedulingStrategy {
     RR,
     WRR,
     EARLY,
-    FAIR,
+    WMRR,
+    WMWRR
 }
 
 // NOTE: Message buffer is already fcfs
@@ -254,6 +255,78 @@ pub fn fair(
     }
 
     // Step 3: Reconstruct msg_buffer with correct order
+    if let Some(start_msg) = leader_start.take() {
+        msg_buffer.push(start_msg);
+    }
+    msg_buffer.append(&mut temp_buffer);
+    if let Some(stop_msg) = leader_stop.take() {
+        msg_buffer.push(stop_msg);
+    }
+}
+
+Waiting-Map Weighted Round Robin
+pub fn wmwrr(
+    msg_buffer: &mut Vec<(NodeId, ClusterMessage)>,
+    waiting_map: &mut HashMap<usize, Vec<ClusterMessage>>,
+    partition_size: u64,
+    prioritized_partition_id: usize,
+) {
+    let mut leader_start: Option<(NodeId, ClusterMessage)> = None;
+    let mut leader_stop: Option<(NodeId, ClusterMessage)> = None;
+
+    // Step 1: Drain msg_buffer and categorize messages
+    let mut temp_buffer: Vec<(NodeId, ClusterMessage)> = Vec::new();
+    let mut non_priority_messages: Vec<(NodeId, ClusterMessage)> = Vec::new();
+
+    while let Some((node_id, msg)) = msg_buffer.pop() {
+        match msg {
+            ClusterMessage::LeaderStartSignal(_) => leader_start = Some((node_id, msg)),
+            ClusterMessage::LeaderStopSignal => leader_stop = Some((node_id, msg)),
+            ClusterMessage::OmniPaxosMessage((key, _)) => {
+                let partition_id = key / partition_size as usize;
+
+                if partition_id == prioritized_partition_id {
+                    temp_buffer.push((node_id, msg));
+                } else {
+                    non_priority_messages.push((node_id, msg));
+                }
+            }
+        }
+    }
+
+    // Step 2: Dealing with non priority messages
+    let mut processed_count = 0;
+    for (node_id, msg) in non_priority_messages {
+        if processed_count < 3 {
+            temp_buffer.push((node_id, msg));
+            processed_count += 1;
+        } else {
+            let partition_id = match msg {
+                ClusterMessage::OmniPaxosMessage((key, _)) => key / partition_size as usize,
+                _ => unreachable!(),
+            };
+            waiting_map.entry(partition_id).or_default().push(msg);
+        }
+    }
+
+    // Step 3: Poll waiting_map in round-robin order
+    if !waiting_map.is_empty() {
+        let least_len = waiting_map.values().map(Vec::len).min().unwrap_or(0);
+        let mut keys: Vec<_> = waiting_map.keys().cloned().collect();
+        keys.sort(); // Ensure a deterministic order
+
+        for _ in 0..least_len {
+            for &key in &keys {
+                if let Some(vec) = waiting_map.get_mut(&key) {
+                    if let Some(msg) = vec.drain(..1).next() {
+                        temp_buffer.push((0, msg)); // NodeId 0 as placeholder
+                    }
+                }
+            }
+        }
+    }
+
+    // Step 4: Reconstruct msg_buffer with correct order
     if let Some(start_msg) = leader_start.take() {
         msg_buffer.push(start_msg);
     }
