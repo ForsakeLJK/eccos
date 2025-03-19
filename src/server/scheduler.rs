@@ -6,6 +6,8 @@ use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use std::fs;
 use toml;
+use std::collections::VecDeque;
+use omnipaxos_kv::common::kv::Key;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]
 pub enum SchedulingStrategy {
@@ -15,7 +17,8 @@ pub enum SchedulingStrategy {
     WRR,
     EARLY,
     WMRR,
-    WMWRR
+    WMWRR,
+    LATE
 }
 
 // NOTE: Message buffer is already fcfs
@@ -215,7 +218,7 @@ pub fn early(
     result
 }
 
-pub fn fair(
+pub fn wmrr(
     msg_buffer: &mut Vec<(NodeId, ClusterMessage)>,
     waiting_map: &mut HashMap<usize, Vec<ClusterMessage>>,
     partition_size: u64,
@@ -264,7 +267,7 @@ pub fn fair(
     }
 }
 
-Waiting-Map Weighted Round Robin
+// Waiting-Map Weighted Round Robin
 pub fn wmwrr(
     msg_buffer: &mut Vec<(NodeId, ClusterMessage)>,
     waiting_map: &mut HashMap<usize, Vec<ClusterMessage>>,
@@ -333,5 +336,54 @@ pub fn wmwrr(
     msg_buffer.append(&mut temp_buffer);
     if let Some(stop_msg) = leader_stop.take() {
         msg_buffer.push(stop_msg);
+    }
+}
+
+// Late Scheduling
+#[derive(Debug, PartialEq, Eq, Clone, Copy)]
+pub enum AccessState {
+    Free,
+    Reading,
+    Writing,
+}
+
+pub fn late_scheduling(msg_buffer: &mut Vec<(NodeId, ClusterMessage)>, partition_size: usize) {
+    if msg_buffer.is_empty() {
+        return;
+    }
+
+    let mut control_messages = Vec::new();
+    let mut partition_messages = Vec::new();
+    
+    for i in (0..msg_buffer.len()).rev() {
+        let (node_id, msg) = msg_buffer.swap_remove(i);
+        match msg {
+            ClusterMessage::OmniPaxosMessage(_) => partition_messages.push((node_id, msg)),
+            _ => control_messages.push((node_id, msg)),
+        }
+    }
+    
+    let mut partition_states = HashMap::new();
+    msg_buffer.clear();
+    msg_buffer.extend(control_messages);
+    
+    while !partition_messages.is_empty() {
+        let mut progress = false;
+        
+        for i in (0..partition_messages.len()).rev() {
+            if let (node_id, ClusterMessage::OmniPaxosMessage((key, _))) = &partition_messages[i] {
+                let partition_id = *key / partition_size;
+                if !partition_states.contains_key(&partition_id) {
+                    partition_states.insert(partition_id, true);
+                    let (node_id, msg) = partition_messages.swap_remove(i);
+                    msg_buffer.push((node_id, msg));
+                    progress = true;
+                }
+            }
+        }
+        
+        if !progress && !partition_messages.is_empty() {
+            partition_states.clear();
+        }
     }
 }
