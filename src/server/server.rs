@@ -338,6 +338,9 @@ impl OmniPaxosServer {
             SchedulingStrategy::WMWRR => {
                 scheduler::wmwrr(messages, &mut waiting_pool, self.config.partition_size, 0)
             }
+            SchedulingStrategy::LATE => {
+                scheduler::late_scheduling(messages, self.config.partition_size as usize)
+            }
         }
 
         self.waiting_pool = waiting_pool;
