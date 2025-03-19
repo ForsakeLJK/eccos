@@ -271,7 +271,7 @@ pub fn early(
     result
 }
 
-pub fn fair(
+pub fn wmrr(
     msg_buffer: &mut Vec<(NodeId, ClusterMessage)>,
     waiting_map: &mut HashMap<usize, Vec<ClusterMessage>>,
     partition_size: u64,
