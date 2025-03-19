@@ -4,13 +4,14 @@ use crate::{
     network::Network,
     partition::Partition,
     scheduler::{self, SchedulingStrategy},
+   profiling::{MetricsManager, PartitionMetrics}, // Add this import
 };
 use chrono::Utc;
 use csv::Writer;
 use log::*;
 use omnipaxos::{util::NodeId, OmniPaxosConfig};
 use omnipaxos_kv::common::{kv::*, messages::*, utils::Timestamp};
-use std::{fs::File, io::Write, time::Duration};
+use std::{collections::HashMap, fs::File, io::Write, time::Duration};
 
 const NETWORK_BATCH_SIZE: usize = 1000;
 const LEADER_WAIT: Duration = Duration::from_secs(2);
@@ -23,6 +24,7 @@ pub struct OmniPaxosServer {
     partitions: Vec<Partition>,
     peers: Vec<NodeId>,
     config: OmniPaxosServerConfig,
+    metrics_manager: MetricsManager, // Add metrics manager
 }
 
 impl OmniPaxosServer {
@@ -46,6 +48,9 @@ impl OmniPaxosServer {
 
         let step_size = config.partition_size as usize;
         let num_partitions = config.num_partitions as usize;
+        
+        // Initialize metrics manager
+        let mut metrics_manager = MetricsManager::new();
 
         for i in (0..(num_partitions * step_size)).step_by(step_size) {
             let start_key = i;
@@ -58,6 +63,9 @@ impl OmniPaxosServer {
                 config.server_id,
             );
             partitions.push(partition);
+            
+            // Register each partition with the metrics manager
+            metrics_manager.register_partition(start_key);
         }
 
         let peers = config.get_peers(config.server_id);
@@ -69,6 +77,7 @@ impl OmniPaxosServer {
             partitions,
             peers,
             config,
+            metrics_manager,
         };
         server
     }
@@ -111,6 +120,11 @@ impl OmniPaxosServer {
                     self.send_outgoing(outgoing_msg_buffer);
                 },
                 _ = self.network.cluster_messages.recv_many(&mut cluster_msg_buf, NETWORK_BATCH_SIZE) => {
+                    // Update metrics for queue length before processing
+                    for (key, p) in self.get_partition_key_map() {
+                        self.metrics_manager.update_max_queue_length(&key, cluster_msg_buf.len());
+                    }
+                    
                     let end_experiment = self.handle_cluster_messages(&mut cluster_msg_buf).await;
                     if end_experiment {
                         break;
@@ -137,12 +151,22 @@ impl OmniPaxosServer {
         self.save_output().expect("Failed to write to file");
     }
 
+    // Helper method to get a map of partition start keys to their indices
+    fn get_partition_key_map(&self) -> HashMap<Key, usize> {
+        let mut key_map = HashMap::new();
+        for (idx, partition) in self.partitions.iter().enumerate() {
+            key_map.insert(partition.key_range().start_key(), idx);
+        }
+        key_map
+    }
+
     fn send_outgoing(&mut self, mut msg_buffer: Vec<(NodeId, ClusterMessage)>) {
         match self.config.out_scheduling_strategy {
             SchedulingStrategy::FCFS => scheduler::fcfs(&mut msg_buffer),
             SchedulingStrategy::LIFO => scheduler::lifo(&mut msg_buffer),
             SchedulingStrategy::MP => scheduler::mp(&mut msg_buffer),
-            SchedulingStrategy::HB_LF_FF=> scheduler::hybrid_lifo_fifo(&mut msg_buffer)
+            SchedulingStrategy::HB_LF_FF=> scheduler::hybrid_lifo_fifo(&mut msg_buffer),
+            SchedulingStrategy::TS=> scheduler::ts(&mut msg_buffer),
         }
 
         for (to, msg) in msg_buffer {
@@ -189,23 +213,21 @@ impl OmniPaxosServer {
     }
 
     fn handle_decided_entries(&mut self, decided_commands: Vec<Command>) {
-        for decided_command in decided_commands {
-            let read = self.database.handle_command(decided_command.kv_cmd);
-
-            // NOTE: Only respond to client if server is the issuer
-            if decided_command.coordinator_id != self.id {
-                continue;
-            }
-
-            let response = match read {
-                Some(read_result) => ServerMessage::Read(decided_command.id, read_result),
-                None => ServerMessage::Write(decided_command.id),
-            };
-            let to = decided_command.client_id;
-
-            self.network.send_to_client(to, response);
+        
+    for decided_command in decided_commands {
+        let read = self.database.handle_command(decided_command.kv_cmd);
+        if decided_command.coordinator_id != self.id {
+            continue;
         }
+        let response = match read {
+            Some(read_result) => ServerMessage::Read(decided_command.id, read_result),
+            None => ServerMessage::Write(decided_command.id),
+        };
+        let to = decided_command.client_id;
+        self.network.send_to_client(to, response);
     }
+}
+    
 
     fn get_partition(&mut self, key: &Key) -> &mut Partition {
         let idx = key / self.config.partition_size as usize;
@@ -265,23 +287,31 @@ impl OmniPaxosServer {
             SchedulingStrategy::LIFO => scheduler::lifo(messages),
             SchedulingStrategy::MP => scheduler::mp(messages),
             SchedulingStrategy::HB_LF_FF=> scheduler::hybrid_lifo_fifo(messages),
+            SchedulingStrategy::TS=> scheduler::ts(messages),
         }
 
         for (_from, message) in messages.drain(..) {
             trace!("{}: Received {message:?}", self.id);
-            match message {
-                ClusterMessage::OmniPaxosMessage((key, msg)) => {
+            match &message {
+                ClusterMessage::OmniPaxosMessage((key, _)) => {
+                    // Record the message in metrics before processing
+                    self.metrics_manager.record_message(key, &message);
+                    
                     let (decided_commands, mut outgoing_msgs) = {
-                        let partition = self.get_partition(&key);
-                        partition.handle_incoming(msg);
-                        (partition.get_decided_cmds(), partition.get_outgoing_msgs())
+                        let partition = self.get_partition(key);
+                        if let ClusterMessage::OmniPaxosMessage((_, msg)) = message {
+                            partition.handle_incoming(msg);
+                            (partition.get_decided_cmds(), partition.get_outgoing_msgs())
+                        } else {
+                            unreachable!() // We already matched on OmniPaxosMessage
+                        }
                     };
 
                     self.handle_decided_entries(decided_commands);
                     outgoing_msg_buffer.append(&mut outgoing_msgs);
                 }
                 ClusterMessage::LeaderStartSignal(start_time) => {
-                    self.send_client_start_signals(start_time)
+                    self.send_client_start_signals(*start_time)
                 }
                 ClusterMessage::LeaderStopSignal => return true,
             }
@@ -309,6 +339,7 @@ impl OmniPaxosServer {
     fn save_output(&self) -> Result<(), std::io::Error> {
         self.to_json(self.config.summary_filepath.clone())?;
         self.to_csv(self.config.output_filepath.clone())?;
+        self.to_metrics_csv(format!("{}_metrics.csv", self.config.output_filepath.clone()))?;
 
         Ok(())
     }
@@ -330,6 +361,43 @@ impl OmniPaxosServer {
                 format!("{}", partition.count_committed_entries()),
             ])?;
         }
+        writer.flush()?;
+        Ok(())
+    }
+    
+    // New method to write metrics to a CSV file
+    fn to_metrics_csv(&self, file_path: String) -> Result<(), std::io::Error> {
+        let file = File::create(file_path)?;
+        let mut writer = Writer::from_writer(file);
+        
+        // Write header
+        writer.write_record(&[
+            "partition_start_key",
+            "partition_end_key", 
+            "total_messages",
+            "post_quorum_messages",
+            "post_quorum_percentage",
+            "max_queue_length",
+        ])?;
+        
+        // Write data for each partition
+        for partition in self.partitions.iter() {
+            let start_key = partition.key_range().start_key();
+            let end_key = partition.key_range().end_key();
+            
+            // Get metrics for this partition
+            if let Some(metrics) = self.metrics_manager.get_partition_metrics(&start_key) {
+                writer.write_record(&[
+                    format!("{}", start_key),
+                    format!("{}", end_key),
+                    format!("{}", metrics.total_messages()),
+                    format!("{}", metrics.post_quorum_messages()),
+                    format!("{:.2}", metrics.post_quorum_percentage()),
+                    format!("{}", metrics.max_queue_length()),
+                ])?;
+            }
+        }
+        
         writer.flush()?;
         Ok(())
     }
