@@ -6,6 +6,9 @@ use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use std::fs;
+use omnipaxos::messages::ballot_leader_election::HeartbeatMsg;
+use omnipaxos::messages::Message;
+use omnipaxos::messages::sequence_paxos::PaxosMsg;
 use toml;
 
 #[derive(Debug, Serialize, Deserialize, Clone)]

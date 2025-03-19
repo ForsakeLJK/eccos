@@ -333,7 +333,7 @@ impl OmniPaxosServer {
                 early_msg = scheduler::early(messages, self.config.partition_size, self.num_threads)
             }
             SchedulingStrategy::WMRR => {
-                scheduler::wmrr(messages, &mut waiting_pool, self.config.partition_size)
+                scheduler::fair(messages, &mut waiting_pool, self.config.partition_size)
             }
             SchedulingStrategy::WMWRR => {
                 scheduler::wmwrr(messages, &mut waiting_pool, self.config.partition_size, 0)
