@@ -312,7 +312,7 @@ impl OmniPaxosServer {
             }
         }
         self.send_outgoing(outgoing_msg_buffer);
-        return false;
+        false
     }
 
     async fn handle_cluster_messages(
@@ -327,7 +327,7 @@ impl OmniPaxosServer {
         match self.config.in_scheduling_strategy {
             SchedulingStrategy::FCFS => scheduler::fcfs(messages),
             SchedulingStrategy::LIFO => scheduler::lifo(messages),
-            SchedulingStrategy::RR => scheduler::rr(messages, self.config.partition_size),
+            SchedulingStrategy::RR => scheduler::rr(messages),
             SchedulingStrategy::WRR => scheduler::wrr(messages),
             SchedulingStrategy::EARLY => {
                 early_msg = scheduler::early(messages, self.config.partition_size, self.num_threads)
@@ -408,7 +408,7 @@ impl OmniPaxosServer {
 
     fn to_json(&self, file_path: String) -> Result<(), std::io::Error> {
         let config_json = serde_json::to_string_pretty(&self.config)?;
-        let mut output_file = File::create(file_path.clone()).unwrap();
+        let mut output_file = File::create(file_path.clone())?;
         output_file.write_all(config_json.as_bytes())?;
         output_file.flush()
     }

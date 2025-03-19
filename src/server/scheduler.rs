@@ -2,7 +2,6 @@ use omnipaxos::util::NodeId;
 use omnipaxos_kv::common::messages::ClusterMessage;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
-use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use lazy_static::lazy_static;
 use std::fs;
