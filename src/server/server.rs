@@ -204,7 +204,8 @@ impl OmniPaxosServer {
         match self.config.out_scheduling_strategy {
             SchedulingStrategy::FCFS => scheduler::fcfs(&mut msg_buffer),
             SchedulingStrategy::LIFO => scheduler::lifo(&mut msg_buffer),
-            SchedulingStrategy::RR => scheduler::rr(&mut msg_buffer, self.config.partition_size),
+            SchedulingStrategy::RR => scheduler::rr(&mut msg_buffer),
+            SchedulingStrategy::WRR => scheduler::wrr(&mut msg_buffer),
             _ => {}
         }
 
@@ -327,6 +328,7 @@ impl OmniPaxosServer {
             SchedulingStrategy::FCFS => scheduler::fcfs(messages),
             SchedulingStrategy::LIFO => scheduler::lifo(messages),
             SchedulingStrategy::RR => scheduler::rr(messages, self.config.partition_size),
+            SchedulingStrategy::WRR => scheduler::wrr(messages),
             SchedulingStrategy::EARLY => {
                 early_msg = scheduler::early(messages, self.config.partition_size, self.num_threads)
             }
