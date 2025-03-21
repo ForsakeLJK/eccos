@@ -7,6 +7,8 @@ use omnipaxos::{
 
 use omnipaxos_kv::common::{kv::*, messages::*};
 use omnipaxos_storage::memory_storage::MemoryStorage;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use omnipaxos::messages::sequence_paxos::PaxosMsg;
 
 type OmniPaxosInstance = OmniPaxos<Command, MemoryStorage<Command>>;
 
@@ -18,6 +20,11 @@ pub struct Partition {
     current_decided_idx: usize,
     initial_leader: NodeId,
     data_collection: DataCollection,
+    
+    // Metrics for profiling
+    total_messages: AtomicUsize,
+    post_quorum_messages: AtomicUsize,
+    max_queue_length: AtomicUsize,
 }
 
 impl Partition {
@@ -43,6 +50,12 @@ impl Partition {
         let current_decided_idx = 0;
         let initial_leader = initial_leader;
         let data_collection = DataCollection::new();
+        
+        // Initialize metrics
+        let total_messages = AtomicUsize::new(0);
+        let post_quorum_messages = AtomicUsize::new(0);
+        let max_queue_length = AtomicUsize::new(0);
+        
         Partition {
             server_id,
             key_range,
@@ -51,6 +64,9 @@ impl Partition {
             current_decided_idx,
             initial_leader,
             data_collection,
+            total_messages,
+            post_quorum_messages,
+            max_queue_length,
         }
     }
 
@@ -136,10 +152,81 @@ impl Partition {
     }
 
     pub fn handle_incoming(&mut self, msg: Message<Command>) {
+        // Record metrics before handling the message
+        self.record_message(&msg);
         self.omnipaxos.handle_incoming(msg);
     }
 
     pub fn count_committed_entries(&self) -> usize {
         self.data_collection.count_committed_entries()
+    }
+    
+    
+    
+    /// Record a message being processed
+    fn record_message(&self, msg: &Message<Command>) {
+        self.total_messages.fetch_add(1, Ordering::SeqCst);
+        if self.is_post_quorum_message(msg) {
+            self.post_quorum_messages.fetch_add(1, Ordering::SeqCst);
+        }
+    }
+    
+    /// Update the maximum queue length if the current length is larger
+    pub fn update_max_queue_length(&self, queue_length: usize) {
+        let current_max = self.max_queue_length.load(Ordering::SeqCst);
+        if queue_length > current_max {
+            self.max_queue_length.store(queue_length, Ordering::SeqCst);
+        }
+    }
+    
+    /// Check if a message is post-quorum
+    fn is_post_quorum_message(&self, msg: &Message<Command>) -> bool {
+        match msg {
+            Message::SequencePaxos(paxos_msg) => {
+                match &paxos_msg.msg {
+                    // Decide messages are post-quorum
+                    PaxosMsg::Decide(_) => true,
+                    
+                    // Accepted messages indicate that a quorum has been reached for this proposal
+                    PaxosMsg::Accepted(_) => true,
+                    
+                    // These messages are usually sent after a quorum of promises has been received
+                    PaxosMsg::AcceptSync(_) => true,
+                    PaxosMsg::AcceptDecide(_) => true,
+                    
+                    // All other messages are pre-quorum or unrelated to quorum
+                    _ => false,
+                }
+            },
+            // BLE messages are not directly related to quorum
+            Message::BLE(_) => false,
+        }
+    }
+    
+    
+    
+    /// Get the total number of messages processed
+    pub fn total_messages(&self) -> usize {
+        self.total_messages.load(Ordering::SeqCst)
+    }
+    
+    /// Get the number of post-quorum messages processed
+    pub fn post_quorum_messages(&self) -> usize {
+        self.post_quorum_messages.load(Ordering::SeqCst)
+    }
+    
+    /// Get the maximum queue length observed
+    pub fn max_queue_length(&self) -> usize {
+        self.max_queue_length.load(Ordering::SeqCst)
+    }
+    
+    /// Calculate the percentage of post-quorum messages
+    pub fn post_quorum_percentage(&self) -> f64 {
+        let total = self.total_messages();
+        if total > 0 {
+            (self.post_quorum_messages() as f64 / total as f64) * 100.0
+        } else {
+            0.0
+        }
     }
 }

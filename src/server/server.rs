@@ -4,7 +4,6 @@ use crate::{
     network::Network,
     partition::Partition,
     scheduler::{self, SchedulingStrategy},
-   profiling::{MetricsManager, PartitionMetrics}, // Add this import
 };
 use chrono::Utc;
 use csv::Writer;
@@ -24,7 +23,6 @@ pub struct OmniPaxosServer {
     partitions: Vec<Partition>,
     peers: Vec<NodeId>,
     config: OmniPaxosServerConfig,
-    metrics_manager: MetricsManager, // Add metrics manager
 }
 
 impl OmniPaxosServer {
@@ -48,9 +46,6 @@ impl OmniPaxosServer {
 
         let step_size = config.partition_size as usize;
         let num_partitions = config.num_partitions as usize;
-        
-        // Initialize metrics manager
-        let mut metrics_manager = MetricsManager::new();
 
         for i in (0..(num_partitions * step_size)).step_by(step_size) {
             let start_key = i;
@@ -63,9 +58,6 @@ impl OmniPaxosServer {
                 config.server_id,
             );
             partitions.push(partition);
-            
-            // Register each partition with the metrics manager
-            metrics_manager.register_partition(start_key);
         }
 
         let peers = config.get_peers(config.server_id);
@@ -77,7 +69,6 @@ impl OmniPaxosServer {
             partitions,
             peers,
             config,
-            metrics_manager,
         };
         server
     }
@@ -121,8 +112,8 @@ impl OmniPaxosServer {
                 },
                 _ = self.network.cluster_messages.recv_many(&mut cluster_msg_buf, NETWORK_BATCH_SIZE) => {
                     // Update metrics for queue length before processing
-                    for (key, p) in self.get_partition_key_map() {
-                        self.metrics_manager.update_max_queue_length(&key, cluster_msg_buf.len());
+                    for partition in self.partitions.iter() {
+                        partition.update_max_queue_length(cluster_msg_buf.len());
                     }
                     
                     let end_experiment = self.handle_cluster_messages(&mut cluster_msg_buf).await;
@@ -294,9 +285,6 @@ impl OmniPaxosServer {
             trace!("{}: Received {message:?}", self.id);
             match &message {
                 ClusterMessage::OmniPaxosMessage((key, _)) => {
-                    // Record the message in metrics before processing
-                    self.metrics_manager.record_message(key, &message);
-                    
                     let (decided_commands, mut outgoing_msgs) = {
                         let partition = self.get_partition(key);
                         if let ClusterMessage::OmniPaxosMessage((_, msg)) = message {
@@ -365,7 +353,7 @@ impl OmniPaxosServer {
         Ok(())
     }
     
-    // New method to write metrics to a CSV file
+    // Updated method to write metrics to a CSV file using partition's integrated metrics
     fn to_metrics_csv(&self, file_path: String) -> Result<(), std::io::Error> {
         let file = File::create(file_path)?;
         let mut writer = Writer::from_writer(file);
@@ -385,17 +373,14 @@ impl OmniPaxosServer {
             let start_key = partition.key_range().start_key();
             let end_key = partition.key_range().end_key();
             
-            // Get metrics for this partition
-            if let Some(metrics) = self.metrics_manager.get_partition_metrics(&start_key) {
-                writer.write_record(&[
-                    format!("{}", start_key),
-                    format!("{}", end_key),
-                    format!("{}", metrics.total_messages()),
-                    format!("{}", metrics.post_quorum_messages()),
-                    format!("{:.2}", metrics.post_quorum_percentage()),
-                    format!("{}", metrics.max_queue_length()),
-                ])?;
-            }
+            writer.write_record(&[
+                format!("{}", start_key),
+                format!("{}", end_key),
+                format!("{}", partition.total_messages()),
+                format!("{}", partition.post_quorum_messages()),
+                format!("{:.2}", partition.post_quorum_percentage()),
+                format!("{}", partition.max_queue_length()),
+            ])?;
         }
         
         writer.flush()?;
